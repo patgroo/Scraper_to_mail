@@ -1,66 +1,34 @@
-import smtplib
-import os
-
-from WebScraper import scrape_article_data
-
-from message_to_html import create_html_from_scraper
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from dotenv import load_dotenv
+import requests
+from bs4 import BeautifulSoup
 
 
-def load_envfile():
+def scrape_article_data(url):
 
-    load_dotenv()
-    print("Loading .env file...")
+    response = requests.get(url)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, 'html.parser')
 
-    try:
-        sender = os.getenv('EMAIL_SENDER')
-        password = os.getenv('EMAIL_PASSWORD')
-        smtp_server = os.getenv('SMTP_SERVER')
-        port = os.getenv("PORT")
+    articles = soup.find_all(
+        'article', class_='featured-secondary__wrapper___6uFWZ')
 
-        if sender and password and smtp_server and port:
-            print(".env file was successfully loaded...")
-            return sender, password, smtp_server, port
-        else:
-            config = {
-                "EMAIL_SENDER": sender,
-                "EMAIL_PASSWORD": password,
-                "SMTP_SERVER": smtp_server,
-                "PORT": port
-            }
-            for var_name, var_value in config.items():
-                if not var_value:
-                    print(f"{var_name} not set")
+    scraped_data = []
 
-    except ValueError:
-        print(f"Error loading the .env file:{ValueError}")
+    for article in articles:
 
+        title_tag = article.find(
+            'h2', class_='featured-secondary__title___mb8GK')
+        author_tag = article.find(
+            'span', class_='featured-secondary__byline___qvEKL')
+        date_tag = article.find(
+            'time', class_='featured-secondary__date___tByAn')
 
-def send_email(receiver_email, subject):
+        article_url = title_tag.find('a')['href'] if title_tag else 'No URL'
+        title = title_tag.text.strip() if title_tag else 'No Title'
+        author = author_tag.text.strip() if author_tag else 'No Author'
+        date = date_tag['datetime'] if date_tag else 'No Date'
 
-    sender, password, smtp_server, port = load_envfile()
+        article_info = f"Title: {title}\nAuthor: {author}\nDate: {date}\nURL: {article_url}"
 
-    message = MIMEMultipart()
-    message["From"] = sender
-    message["To"] = receiver_email
-    message["Subject"] = subject
+        scraped_data.append(article_info)
 
-    html = create_html_from_scraper(
-        scrape_article_data('https://www.sciencenews.org/'))
-
-    message.attach(MIMEText(html, "html"))
-
-    try:
-        with smtplib.SMTP_SSL(smtp_server, port) as server:
-            server.login(sender, password)
-            server.sendmail(sender, receiver_email, message.as_string())
-            print(
-                f"Sending Mail to with subject {subject} to {receiver_email,}")
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-
-send_email("@@@ADD_E-MAIL_ADRESS_HERE@@@", "sciencenews scraper_news")
+    return scraped_data
